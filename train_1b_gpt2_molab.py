@@ -529,6 +529,7 @@ def _(
         weight_decay=0.01,
         max_steps=MAX_STEPS,
         bf16=True,
+        gradient_checkpointing=True,
         logging_steps=10,
         save_strategy="steps",
         save_steps=SAVE_STEPS,
