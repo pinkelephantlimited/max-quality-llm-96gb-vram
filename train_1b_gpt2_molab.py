@@ -5,7 +5,8 @@ app = marimo.App()
 
 
 @app.cell(hide_code=True)
-def _(mo):
+def _():
+    import marimo as mo
     mo.md(
         """
         # 1B GPT-2 Trainer — Blackwell B6000 (96GB VRAM)
@@ -18,7 +19,7 @@ def _(mo):
         (time-based uploads, so nothing is lost even if the 12h session dies).
         """
     )
-    return
+    return (mo,)
 
 
 @app.cell
@@ -286,71 +287,30 @@ def _(mo):
 
 
 @app.cell
-def _(DATASETS, MAX_TOKENS, SEQ_LEN, SEED, Dataset, load_dataset, np, tok):
+def _(Dataset, SEQ_LEN, load_dataset, np):
     import time as _t
 
-    buf = np.zeros(MAX_TOKENS, dtype=np.int32)
-    filled = 0
-    targets = []
-    streams = []
-    for ds_id, col, w in DATASETS:
-        try:
-            s = load_dataset(ds_id, split="train", streaming=True)
-            s = s.shuffle(seed=SEED, buffer_size=10_000)
-            streams.append([iter(s), col, w])
-            targets.append(int(MAX_TOKENS * w / sum(x[2] for x in DATASETS)))
-            print(f"Streaming: {ds_id} (column '{col}', target {targets[-1]/1e6:.0f}M tokens)")
-        except Exception as exc:
-            print(f"Skip {ds_id}: {exc}")
-
-    if not streams:
-        raise RuntimeError("No dataset could be streamed. Check DATASETS / token.")
-
-    counts = [0] * len(streams)
-    done = [False] * len(streams)
     t_start = _t.time()
-    while filled < MAX_TOKENS:
-        advanced = False
-        for i, (it, col, w) in enumerate(streams):
-            if done[i]:
-                continue
-            if counts[i] >= targets[i] and all(
-                counts[j] >= targets[j] or done[j] for j in range(len(streams))
-            ):
-                done[i] = True
-                continue
-            if counts[i] >= targets[i]:
-                continue
-            try:
-                ex = next(it)
-            except StopIteration:
-                done[i] = True
-                print(f"Stream {i} exhausted ({counts[i]/1e6:.0f}M tokens)")
-                continue
-            ids = tok(
-                ex[col],
-                truncation=True,
-                max_length=SEQ_LEN,
-            )["input_ids"]
-            room = MAX_TOKENS - filled
-            ids = ids[:room]
-            if not ids:
-                continue
-            buf[filled : filled + len(ids)] = ids
-            filled += len(ids)
-            counts[i] += len(ids)
-            advanced = True
-        if not advanced or all(done):
-            break
+    try:
+        _df = load_dataset("pinkelephantlimited/1b-gpt2-tok")
+    except Exception as _e:
+        raise RuntimeError(
+            f"Could not load cached token data (pinkelephantlimited/1b-gpt2-tok): {_e}"
+        ) from _e
 
-    buf = buf[:filled]
-    n_blocks = filled // SEQ_LEN
+    train_blocks = np.asarray(_df["train"]["input_ids"], dtype=np.int64)
+    eval_blocks = np.asarray(_df["eval"]["input_ids"], dtype=np.int64)
+    n_train = train_blocks.shape[0]
+    n_eval = eval_blocks.shape[0]
+    blocks = np.concatenate([train_blocks, eval_blocks])
+    n_blocks = blocks.shape[0]
     usable = n_blocks * SEQ_LEN
-    blocks = buf[:usable].reshape(n_blocks, SEQ_LEN).astype(np.int64)
-
-    n_eval = min(500, n_blocks // 10)
-    train_blocks = blocks[: n_blocks - n_eval]
-    eval_blocks = blocks[n_blocks - n_eval :]
+    filled = usable
+    buf = blocks.reshape(-1)
+    targets = [int(filled)]
+    streams = []
+    counts = [int(filled)]
+    done = [True]
 
     ones = lambda b: np.ones_like(b)
     train_ds = Dataset.from_dict(
@@ -360,10 +320,11 @@ def _(DATASETS, MAX_TOKENS, SEQ_LEN, SEED, Dataset, load_dataset, np, tok):
         {"input_ids": eval_blocks.tolist(), "attention_mask": ones(eval_blocks).tolist()}
     )
 
-    print(f"\n{filled/1e6:.1f}M tokens in {_t.time() - t_start:.0f}s")
-    print(f"Blocks: {n_blocks} of {SEQ_LEN} · train {len(train_ds)} · eval {len(eval_ds)}")
-    print("Per-stream tokens (M):", [round(c / 1e6, 1) for c in counts])
-    return buf, counts, eval_ds, train_ds
+    print(f"Data loaded from cached HF dataset in {_t.time() - t_start:.1f}s "
+          f"({filled/1e6:.1f}M tokens)")
+    print(f"Blocks: {n_blocks} of {SEQ_LEN} | train {n_train} | eval {n_eval}")
+    print("Source: pinkelephantlimited/1b-gpt2-tok (codeparrot gated; open-web-math fallback)")
+    return eval_ds, train_ds
 
 
 @app.cell(hide_code=True)
@@ -560,7 +521,7 @@ def _(
         ],
     )
     print(
-        f"Trainer ready · steps {MAX_STEPS} · batch 16 x2 accum = 32K tok/step · "
+        f"Trainer ready · steps {MAX_STEPS} · batch 4 x8 accum = 32K tok/step · "
         f"~{(32 * SEQ_LEN):,} tokens/step"
     )
     return collator, trainer, trainer_args
