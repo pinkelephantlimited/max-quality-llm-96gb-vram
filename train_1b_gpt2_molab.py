@@ -154,7 +154,7 @@ def _(mo):
         ## 2. Configuration
 
         Edit the values below. The checkpoint repo is created automatically if it
-        does not exist (e.g. `pinkelephantlimited/1b-gpt2`).
+        does not exist (e.g. `pinkelephantlimited/pink-elephant-gpt2-1b`).
         """
     )
     return
@@ -163,7 +163,7 @@ def _(mo):
 @app.cell
 def _(mo, os):
     repo_id = mo.ui.text(
-        value=os.environ.get("CHECKPOINT_REPO", "pinkelephantlimited/1b-gpt2"),
+        value=os.environ.get("CHECKPOINT_REPO", "pinkelephantlimited/pink-elephant-gpt2-1b"),
         label="HF repo ID (checkpoints + final model)",
     )
     max_steps = mo.ui.number(start=100, stop=50000, step=100, value=2000, label="Total training steps")
@@ -292,10 +292,10 @@ def _(Dataset, SEQ_LEN, load_dataset, np):
 
     t_start = _t.time()
     try:
-        _df = load_dataset("pinkelephantlimited/1b-gpt2-tok")
+        _df = load_dataset("pinkelephantlimited/pink-elephant-gpt2-1b-tokenized")
     except Exception as _e:
         raise RuntimeError(
-            f"Could not load cached token data (pinkelephantlimited/1b-gpt2-tok): {_e}"
+            f"Could not load cached token data (pinkelephantlimited/pink-elephant-gpt2-1b-tokenized): {_e}"
         ) from _e
 
     train_blocks = np.asarray(_df["train"]["input_ids"], dtype=np.int64)
@@ -323,7 +323,7 @@ def _(Dataset, SEQ_LEN, load_dataset, np):
     print(f"Data loaded from cached HF dataset in {_t.time() - t_start:.1f}s "
           f"({filled/1e6:.1f}M tokens)")
     print(f"Blocks: {n_blocks} of {SEQ_LEN} | train {n_train} | eval {n_eval}")
-    print("Source: pinkelephantlimited/1b-gpt2-tok (codeparrot gated; open-web-math fallback)")
+    print("Source: pinkelephantlimited/pink-elephant-gpt2-1b-tokenized (codeparrot gated; open-web-math fallback)")
     return eval_ds, train_ds
 
 
